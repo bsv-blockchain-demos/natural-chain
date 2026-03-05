@@ -11,8 +11,8 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@bsv/sdk": "^1.4.20",
-    "@bsv/wallet-toolbox-client": "^1.2.48",
+    "@bsv/sdk": "^2.0.5",
+    "@bsv/wallet-toolbox-client": "^2.1.2",
     "@emotion/styled": "^11.14.0",
     "@mui/icons-material": "^7.0.2",
     "@mui/material": "^7.0.2",

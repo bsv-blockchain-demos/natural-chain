@@ -259,7 +259,8 @@ const App: React.FC = () => {
   async function createTokenOnBSV(data: DataEntry, step: string, spend?: QueueEntry | null): Promise<{ txid: string, arc: unknown }> {
     
     // Initialize the wallet client with the remote signer to emulate IoT Device signing off on its data.
-    const wallet = new HTTPWalletJSON('https://natural-chain.vercel.app', 'https://natural-chain.vercel.app/api')
+    const baseUrl = window.location.origin
+    const wallet = new HTTPWalletJSON(baseUrl, `${baseUrl}/api`)
 
     // Create a hash of the data
     const sha = Hash.sha256(JSON.stringify(data))
@@ -346,7 +347,6 @@ const App: React.FC = () => {
           const nb = new Beef()
           nb.mergeTransaction(sourceTransaction)
           console.log(nb.toLogString())
-          console.log(await nb.verify(new WhatsOnChain()))
           inputBEEF = nb.toBinary()
           inputs.push({
             unlockingScript: txDummy.inputs[0].unlockingScript?.toHex() as string,
@@ -524,15 +524,21 @@ const App: React.FC = () => {
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
         <Box sx={boxSx}>
           <Box sx={cardSx}><WellheadCard data={simulateData.wellhead} onSubmit={handleSubmitData} /></Box>
-          <ResultBox entry={wellheadQueue[wellheadQueue.length - 1]} />
+          {submissions.filter(s => s.step === 'Wellhead').map(s => (
+            <ResultBox key={s.txid} entry={s} />
+          ))}
         </Box>
         <Box sx={boxSx}>
           <Box sx={cardSx}><GatheringCard data={simulateData.gathering} onSubmit={handleSubmitData} /></Box>
-          <ResultBox entry={gatheringQueue[gatheringQueue.length - 1]} />
+          {submissions.filter(s => s.step === 'Gathering').map(s => (
+            <ResultBox key={s.txid} entry={s} />
+          ))}
         </Box>
         <Box sx={boxSx}>
           <Box sx={cardSx}><ProcessingCard data={simulateData.processing} onSubmit={handleSubmitData} /></Box>
-          <ResultBox entry={processingQueue[processingQueue.length - 1]} />
+          {submissions.filter(s => s.step === 'Processing').map(s => (
+            <ResultBox key={s.txid} entry={s} />
+          ))}
         </Box>
         <Box sx={boxSx}>
           <Box sx={cardSx}><TransmissionCard data={{
@@ -548,15 +554,21 @@ const App: React.FC = () => {
                   }
                 }
           }} onSubmit={handleSubmitData} /></Box>
-          <ResultBox entry={transmissionQueue[transmissionQueue.length - 1]} />
+          {submissions.filter(s => s.step === 'Transmission').map(s => (
+            <ResultBox key={s.txid} entry={s} />
+          ))}
         </Box>
         <Box sx={boxSx}>
           <Box sx={cardSx}><StorageCard data={simulateData.storage} onSubmit={handleSubmitData} /></Box>
-          <ResultBox entry={storageQueue[storageQueue.length - 1]} />
+          {submissions.filter(s => s.step === 'Storage').map(s => (
+            <ResultBox key={s.txid} entry={s} />
+          ))}
         </Box>
         <Box sx={boxSx}>
           <Box sx={cardSx}><LNGExportCard data={simulateData.lngExport} onSubmit={handleSubmitData} /></Box>
-          <ResultBox entry={lngExportQueue[lngExportQueue.length - 1]} />
+          {submissions.filter(s => s.step === 'LNG Export').map(s => (
+            <ResultBox key={s.txid} entry={s} />
+          ))}
         </Box>
       </Box>
       <SubmissionsLog submissions={submissions} />
