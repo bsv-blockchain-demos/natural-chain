@@ -163,7 +163,10 @@ const App: React.FC = () => {
       }
   }
 
+  const stepHasSubmission = (step: string) => submissions.some(s => s.step === step);
+
   const handleSubmitData = async (step: string, data: DataEntry) => {
+    if (stepHasSubmission(step) || isSubmitting) return;
     try {
       setIsSubmitting(true);
       setSubmittingStep(step);
@@ -523,19 +526,19 @@ const App: React.FC = () => {
       </Typography>
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
         <Box sx={boxSx}>
-          <Box sx={cardSx}><WellheadCard data={simulateData.wellhead} onSubmit={handleSubmitData} /></Box>
+          <Box sx={cardSx}><WellheadCard data={simulateData.wellhead} onSubmit={handleSubmitData} disabled={stepHasSubmission('Wellhead')} /></Box>
           {submissions.filter(s => s.step === 'Wellhead').map(s => (
             <ResultBox key={s.txid} entry={s} />
           ))}
         </Box>
         <Box sx={boxSx}>
-          <Box sx={cardSx}><GatheringCard data={simulateData.gathering} onSubmit={handleSubmitData} /></Box>
+          <Box sx={cardSx}><GatheringCard data={simulateData.gathering} onSubmit={handleSubmitData} disabled={stepHasSubmission('Gathering')} /></Box>
           {submissions.filter(s => s.step === 'Gathering').map(s => (
             <ResultBox key={s.txid} entry={s} />
           ))}
         </Box>
         <Box sx={boxSx}>
-          <Box sx={cardSx}><ProcessingCard data={simulateData.processing} onSubmit={handleSubmitData} /></Box>
+          <Box sx={cardSx}><ProcessingCard data={simulateData.processing} onSubmit={handleSubmitData} disabled={stepHasSubmission('Processing')} /></Box>
           {submissions.filter(s => s.step === 'Processing').map(s => (
             <ResultBox key={s.txid} entry={s} />
           ))}
@@ -553,19 +556,19 @@ const App: React.FC = () => {
                     nitrogenPct: 1
                   }
                 }
-          }} onSubmit={handleSubmitData} /></Box>
+          }} onSubmit={handleSubmitData} disabled={stepHasSubmission('Transmission')} /></Box>
           {submissions.filter(s => s.step === 'Transmission').map(s => (
             <ResultBox key={s.txid} entry={s} />
           ))}
         </Box>
         <Box sx={boxSx}>
-          <Box sx={cardSx}><StorageCard data={simulateData.storage} onSubmit={handleSubmitData} /></Box>
+          <Box sx={cardSx}><StorageCard data={simulateData.storage} onSubmit={handleSubmitData} disabled={stepHasSubmission('Storage')} /></Box>
           {submissions.filter(s => s.step === 'Storage').map(s => (
             <ResultBox key={s.txid} entry={s} />
           ))}
         </Box>
         <Box sx={boxSx}>
-          <Box sx={cardSx}><LNGExportCard data={simulateData.lngExport} onSubmit={handleSubmitData} /></Box>
+          <Box sx={cardSx}><LNGExportCard data={simulateData.lngExport} onSubmit={handleSubmitData} disabled={stepHasSubmission('LNG Export')} /></Box>
           {submissions.filter(s => s.step === 'LNG Export').map(s => (
             <ResultBox key={s.txid} entry={s} />
           ))}

@@ -7,12 +7,13 @@ import { cardMediaSx, cardContainerSx, cardTitleSx, cardDescriptionSx } from '..
 interface TransmissionCardProps {
   data: DataEntry;
   onSubmit: (step: string, data: DataEntry) => void;
+  disabled?: boolean;
 }
 
-const TransmissionCard: React.FC<TransmissionCardProps> = ({ data, onSubmit }) => {
+const TransmissionCard: React.FC<TransmissionCardProps> = ({ data, onSubmit, disabled }) => {
   return (
-    <Card sx={cardContainerSx}>
-      <CardActionArea onClick={() => onSubmit('Transmission', data)}>
+    <Card sx={{ ...cardContainerSx, ...(disabled ? { opacity: 0.5, pointerEvents: 'none' } : {}) }}>
+      <CardActionArea onClick={() => onSubmit('Transmission', data)} disabled={disabled}>
         <CardMedia
           component="img"
           image="/images/transmission-pipeline.png"

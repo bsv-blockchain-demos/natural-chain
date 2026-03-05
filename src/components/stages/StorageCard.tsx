@@ -7,12 +7,13 @@ import { cardMediaSx, cardContainerSx, cardTitleSx, cardDescriptionSx } from '..
 interface StorageCardProps {
   data: DataEntry;
   onSubmit: (step: string, data: DataEntry) => void;
+  disabled?: boolean;
 }
 
-const StorageCard: React.FC<StorageCardProps> = ({ data, onSubmit }) => {
+const StorageCard: React.FC<StorageCardProps> = ({ data, onSubmit, disabled }) => {
   return (
-    <Card sx={cardContainerSx}>
-      <CardActionArea onClick={() => onSubmit('Storage', data)}>
+    <Card sx={{ ...cardContainerSx, ...(disabled ? { opacity: 0.5, pointerEvents: 'none' } : {}) }}>
+      <CardActionArea onClick={() => onSubmit('Storage', data)} disabled={disabled}>
         <CardMedia
           component="img"
           image="/images/storage-facility.png"

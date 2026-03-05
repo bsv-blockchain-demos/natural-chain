@@ -7,12 +7,13 @@ import { cardMediaSx, cardContainerSx, cardTitleSx, cardDescriptionSx } from '..
 interface WellheadCardProps {
   data: DataEntry;
   onSubmit: (step: string, data: DataEntry) => void;
+  disabled?: boolean;
 }
 
-const WellheadCard: React.FC<WellheadCardProps> = ({ data, onSubmit }) => {
+const WellheadCard: React.FC<WellheadCardProps> = ({ data, onSubmit, disabled }) => {
   return (
-    <Card sx={cardContainerSx}>
-      <CardActionArea onClick={() => onSubmit('Wellhead', data)}>
+    <Card sx={{ ...cardContainerSx, ...(disabled ? { opacity: 0.5, pointerEvents: 'none' } : {}) }}>
+      <CardActionArea onClick={() => onSubmit('Wellhead', data)} disabled={disabled}>
         <CardMedia
           component="img"
           image="/images/wellhead.png"
