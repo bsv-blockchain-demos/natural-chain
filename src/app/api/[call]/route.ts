@@ -49,6 +49,12 @@ export async function POST(req: Request) {
       case 'listOutputs':
         result = await wallet.listOutputs(data)
         break
+      case 'listActions':
+        result = await wallet.listActions(data)
+        break
+      case 'relinquishOutput':
+        result = await wallet.relinquishOutput(data)
+        break
       default:
         throw new Error('Invalid path')
     }

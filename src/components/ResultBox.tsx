@@ -1,24 +1,27 @@
 "use client"
 import React, { useState } from 'react';
-import { Box, IconButton, Typography } from '@mui/material';
+import { Box, CircularProgress, IconButton, Typography } from '@mui/material';
 import LinkIcon from '@mui/icons-material/Link';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { QueueEntry } from '../app/page';
+import { useWallet } from '@/context/WalletContext';
 
 interface ResultBoxProps {
   entry: QueueEntry,
 }
 
-interface ArcResponse {
-  txStatus: string
-}
-
 const ResultBox: React.FC<ResultBoxProps> = ({ entry: startingData }) => {
-  const [arcData, setArcData] = useState<ArcResponse | null>(null)
+  const wallet = useWallet()
+  const [actionStatus, setActionStatus] = useState<string | null>(null)
 
   const getStatus = async () => {
-    const res = await (await fetch('https://arc.taal.com/v1/tx/' + startingData.txid)).json()
-    setArcData(res)
+    if (!wallet) return
+    const res = await wallet.listActions({
+      labels: [startingData.step],
+      includeLabels: true,
+    })
+    const match = res.actions.find(a => a.txid === startingData.txid)
+    setActionStatus(match?.status ?? 'not found')
   }
 
   /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -36,22 +39,27 @@ const ResultBox: React.FC<ResultBoxProps> = ({ entry: startingData }) => {
 
   const entry = flatJSON(startingData)
 
+  const isPending = !startingData.txid
+
   if (!startingData) {
     return <Box sx={{ my: 3,
       height: 150, border: '1px dashed #ccc', borderRadius: 2, p: 2, display: 'flex', alignItems: 'center', justifyContent: 'center',
-      sm: { width: '100%' }, 
+      sm: { width: '100%' },
       md: { width: '60%' } }}>
       <Typography variant="body1" color="textSecondary">No tokens yet.</Typography>
     </Box>
   }
 
   return (
-    <Box onClick={getStatus} sx={{ overflow: 'hidden', my:3, sm: { width: '60%' }, md: {width: '60%' }, position: 'relative', height: 'auto', border: '1px solid #ccc', borderRadius: 0, p: 2, backgroundColor: entry.txid ? '#e6f3e6' : '#f3e6e6' }}>
-      <Typography variant="h6" sx={{ mb: 1 }}>Immutable Record Details:</Typography>
+    <Box onClick={getStatus} sx={{ overflow: 'hidden', my:3, sm: { width: '60%' }, md: {width: '60%' }, position: 'relative', height: 'auto', border: '1px solid #ccc', borderRadius: 0, p: 2, backgroundColor: isPending ? '#f5f0e6' : '#e6f3e6' }}>
+      <Typography variant="h6" sx={{ mb: 1 }}>
+        {isPending ? 'Recording to Blockchain...' : 'Immutable Record Details:'}
+      </Typography>
       <Box sx={{ position: 'absolute', top: 10, right: 10 }}>
-        <IconButton size="large" aria-label="refresh">
-          <RefreshIcon fontSize="small" />
-        </IconButton>
+        {isPending
+          ? <CircularProgress size={24} />
+          : <IconButton size="large" aria-label="refresh"><RefreshIcon fontSize="small" /></IconButton>
+        }
       </Box>
       {entry && (
         <>
@@ -64,10 +72,10 @@ const ResultBox: React.FC<ResultBoxProps> = ({ entry: startingData }) => {
           ))}
         </>
       )}
-      {arcData && <Typography variant="body2">Hash of Record on BSV Blockchain: {arcData.txStatus}</Typography>}
-      {entry.txid && arcData && arcData.txStatus === 'MINED' && (
+      {actionStatus && <Typography variant="body2">Transaction status: {actionStatus}</Typography>}
+      {entry.txid && actionStatus === 'completed' && (
         <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
-          <IconButton onClick={() => window.open(`https://whatsonchain.com/tx/${entry.txid}`, '_blank')}>
+          <IconButton onClick={(e) => { e.stopPropagation(); window.open(`https://whatsonchain.com/tx/${entry.txid}`, '_blank') }}>
             <LinkIcon />
           </IconButton>
         </Box>

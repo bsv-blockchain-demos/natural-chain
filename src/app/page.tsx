@@ -1,6 +1,6 @@
 "use client"
 import React, { useEffect, useState } from 'react';
-import { Container, Typography, Box, CircularProgress, Backdrop } from '@mui/material';
+import { Container, Typography, Box, Button } from '@mui/material';
 import WellheadCard from '../components/stages/WellheadCard';
 import GatheringCard from '../components/stages/GatheringCard';
 import ProcessingCard from '../components/stages/ProcessingCard';
@@ -8,9 +8,10 @@ import TransmissionCard from '../components/stages/TransmissionCard';
 import StorageCard from '../components/stages/StorageCard';
 import LNGExportCard from '../components/stages/LNGExportCard';
 import ResultBox from '../components/ResultBox';
-import { Utils, Hash, PushDrop, WalletProtocol, Random, Transaction, HTTPWalletJSON, ARC, CreateActionInput, Beef, BEEF, WhatsOnChain } from '@bsv/sdk'
+import { Utils, Hash, PushDrop, WalletProtocol, Random, Transaction, HTTPWalletJSON, CreateActionInput, Beef, BEEF, LockingScript } from '@bsv/sdk'
 import SubmissionsLog from '@/components/SubmissionsLog';
-import { saveSubmission, getAllSubmissions } from '@/utils/db';
+import { saveSubmission, getAllSubmissions, clearAllSubmissions } from '@/utils/db';
+import { useWallet } from '@/context/WalletContext';
 
 export interface DataEntry {
   entryId: string;
@@ -48,18 +49,21 @@ export interface Submission {
   data: DataEntry;
   txid: string;
   step: string;
-  arc: unknown;
 }
 
-type BitailsResponse = {
-  txid: string;
-  outputs: Array<{
-    index: number;
-    spent: string;
-  }>;
+const SESSION_KEY = 'natural-chain-session-id'
+
+function getOrCreateSessionId(): string {
+  const existing = localStorage.getItem(SESSION_KEY)
+  if (existing) return existing
+  const id = Utils.toBase64(Random(8))
+  localStorage.setItem(SESSION_KEY, id)
+  return id
 }
 
 const App: React.FC = () => {
+  const wallet = useWallet();
+  const [sessionId, setSessionId] = useState<string>('')
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [wellheadQueue, setWellheadQueue] = useState<QueueEntry[]>([]);
   const [gatheringQueue, setGatheringQueue] = useState<QueueEntry[]>([]);
@@ -67,161 +71,168 @@ const App: React.FC = () => {
   const [transmissionQueue, setTransmissionQueue] = useState<QueueEntry[]>([]);
   const [storageQueue, setStorageQueue] = useState<QueueEntry[]>([]);
   const [lngExportQueue, setLngExportQueue] = useState<QueueEntry[]>([]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submittingStep, setSubmittingStep] = useState<string | null>(null);
 
-  const checkUnspentSetQueues = async (submissions: Submission[]) => {
-    const txsIds = submissions.map(s => s.txid)
-    const bitails: BitailsResponse[] = await (await fetch('https://api.bitails.io/tx/multi', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ txsIds })
-    })).json()
-    console.log({bitails})
-    const unspentSubmissions = submissions.filter(s => {
-      const tx = bitails.find(b => b?.txid === s.txid)
-      console.log({ s: s.txid, spent: !!tx?.outputs[0].spent })
-      return !tx?.outputs[0].spent
+  const checkUnspentSetQueues = async (w: HTTPWalletJSON, sid: string) => {
+    const data = await w.listOutputs({
+      includeTags: true,
+      include: 'locking scripts',
+      basket: 'natural gas',
+      tags: [`session-${sid}`],
     })
-    if (unspentSubmissions.length > 0) {
-      // add unspent tokens to the appropriate queue
-      const newWellHead: QueueEntry[] = []
-      const newGathering: QueueEntry[] = []
-      const newProcessing: QueueEntry[] = []
-      const newTransmission: QueueEntry[] = []
-      const newStorage: QueueEntry[] = []
-      const newLngExport: QueueEntry[] = []
-      unspentSubmissions.forEach(token => {
-        switch (token.step) {
-          case 'Wellhead':
-            newWellHead.push(token)
-            break
-          case 'Gathering':
-            newGathering.push(token)
-            break
-          case 'Processing':
-            newProcessing.push(token)
-            break
-          case 'Transmission':
-            newTransmission.push(token)
-            break
-          case 'Storage':
-            newStorage.push(token)
-            break
-          case 'LNG Export':
-            newLngExport.push(token)
-            break
+
+    console.log({ data })
+
+    const newWellHead: QueueEntry[] = []
+    const newGathering: QueueEntry[] = []
+    const newProcessing: QueueEntry[] = []
+    const newTransmission: QueueEntry[] = []
+    const newStorage: QueueEntry[] = []
+    const newLngExport: QueueEntry[] = []
+
+    if (data.outputs.length > 0) {
+      data.outputs.forEach(out => {
+        const { fields } = PushDrop.decode(LockingScript.fromHex(out.lockingScript as string))
+        console.log({ fields })
+        const d = JSON.parse(Utils.toUTF8(fields[0]))
+        const queueEntry: Partial<QueueEntry> = { data: d, txid: out.outpoint.split('.')[0] }
+        if (out.tags?.includes('wellhead')) {
+          queueEntry.step = 'wellhead'
+          newWellHead.push(queueEntry as QueueEntry)
+        } else if (out.tags?.includes('gathering')) {
+          queueEntry.step = 'gathering'
+          newGathering.push(queueEntry as QueueEntry)
+        } else if (out.tags?.includes('processing')) {
+          queueEntry.step = 'processing'
+          newProcessing.push(queueEntry as QueueEntry)
+        } else if (out.tags?.includes('transmission')) {
+          queueEntry.step = 'transmission'
+          newTransmission.push(queueEntry as QueueEntry)
+        } else if (out.tags?.includes('storage')) {
+          queueEntry.step = 'storage'
+          newStorage.push(queueEntry as QueueEntry)
+        } else if (out.tags?.includes('lng export')) {
+          queueEntry.step = 'lng export'
+          newLngExport.push(queueEntry as QueueEntry)
         }
       })
-      return { newWellHead, newGathering, newProcessing, newTransmission, newStorage, newLngExport }
     }
-    return { newWellHead: [], newGathering: [], newProcessing: [], newTransmission: [], newStorage: [], newLngExport: [] }
+    return { newWellHead, newGathering, newProcessing, newTransmission, newStorage, newLngExport }
   }
 
-  // Load submissions from IndexedDB
-  const loadSubmissions = async () => {
+  // Sync unspent tokens from wallet for the current session
+  const syncFromWallet = async (w: HTTPWalletJSON, sid: string) => {
     try {
-      const submissions = await getAllSubmissions();
-      if (submissions && submissions.length > 0) {
-        // check for unspent tokens:
-        const { newWellHead, newGathering, newProcessing, newTransmission, newStorage, newLngExport } = await checkUnspentSetQueues(submissions)
-        console.log({ newWellHead, newGathering, newProcessing, newTransmission, newStorage, newLngExport })
-        setSubmissions(submissions)
-        setWellheadQueue(newWellHead)
-        setGatheringQueue(newGathering)
-        setProcessingQueue(newProcessing)
-        setTransmissionQueue(newTransmission)
-        setStorageQueue(newStorage)
-        setLngExportQueue(newLngExport)
-      }
+      const { newWellHead, newGathering, newProcessing, newTransmission, newStorage, newLngExport } = await checkUnspentSetQueues(w, sid)
+      console.log({ newWellHead, newGathering, newProcessing, newTransmission, newStorage, newLngExport })
+      setWellheadQueue(newWellHead)
+      setGatheringQueue(newGathering)
+      setProcessingQueue(newProcessing)
+      setTransmissionQueue(newTransmission)
+      setStorageQueue(newStorage)
+      setLngExportQueue(newLngExport)
+      // Reconstruct submissions list from wallet outputs
+      const all = [...newWellHead, ...newGathering, ...newProcessing, ...newTransmission, ...newStorage, ...newLngExport]
+      setSubmissions(all.map(q => ({ data: q.data, txid: q.txid, step: q.step })))
     } catch (error) {
-      console.error('Failed to load submissions from IndexedDB:', error);
+      console.error('Failed to sync from wallet:', error);
     }
   };
 
-
   useEffect(() => {
-    loadSubmissions()
-  }, []);
+    const sid = getOrCreateSessionId()
+    setSessionId(sid)
+    if (wallet) syncFromWallet(wallet, sid)
+  }, [wallet]);
 
-  const grabTokenFromPreviousStep = async (step: string) => {
+  const grabTokenFromPreviousStep = (step: string): QueueEntry | undefined => {
     switch (step) {
-        case 'Wellhead':
-          return undefined
-        case 'Gathering':
-          return wellheadQueue[0]
-        case 'Processing':
-          return gatheringQueue[0]
-        case 'Transmission':
-          return processingQueue[0]
-        case 'Storage':
-          return transmissionQueue[0]
-        case 'LNG Export':
-          return storageQueue[0]
-      }
+      case 'wellhead':   return undefined
+      case 'gathering':  return wellheadQueue[0]
+      case 'processing': return gatheringQueue[0]
+      case 'transmission': return processingQueue[0]
+      case 'storage':    return transmissionQueue[0]
+      case 'lng export': return storageQueue[0]
+      default:           return undefined
+    }
   }
 
   const stepHasSubmission = (step: string) => submissions.some(s => s.step === step);
 
-  const handleSubmitData = async (step: string, data: DataEntry) => {
-    if (stepHasSubmission(step) || isSubmitting) return;
-    try {
-      setIsSubmitting(true);
-      setSubmittingStep(step);
-      
-      const entryId = Utils.toBase64(Random(8))
-      data.entryId = entryId
-      data.timestamp = new Date().toISOString()
-      data = simulatedData(data)
+  const handleClearAll = () => {
+    const newId = Utils.toBase64(Random(8))
+    localStorage.setItem(SESSION_KEY, newId)
+    setSessionId(newId)
+    clearAllSubmissions().catch(console.error)
+    setSubmissions([]);
+    setWellheadQueue([]);
+    setGatheringQueue([]);
+    setProcessingQueue([]);
+    setTransmissionQueue([]);
+    setStorageQueue([]);
+    setLngExportQueue([]);
 
-      const spend = await grabTokenFromPreviousStep(step)
-
-      const { txid, arc } = await createTokenOnBSV(data, step, spend)
-
-      const newSubmission = { step, data, txid, arc };
-      
-      // Save to IndexedDB
-      try {
-        await saveSubmission(newSubmission);
-      } catch (error) {
-        console.error('Failed to save submission to IndexedDB:', error);
-      }
-      
-      setSubmissions(prev => [...prev, newSubmission]);
-
-      switch (step) {
-        case 'Wellhead':
-          setWellheadQueue((prev) => [...prev, { data, txid, step }])
-          break
-        case 'Gathering':
-          setGatheringQueue((prev) => [...prev, { data, txid, step }])
-          setWellheadQueue((prev) => prev.slice(1))
-          break
-        case 'Processing':
-          setProcessingQueue((prev) => [...prev, { data, txid, step }])
-          setGatheringQueue((prev) => prev.slice(1))
-          break
-        case 'Transmission':
-          setTransmissionQueue((prev) => [...prev, { data, txid, step }])
-          setProcessingQueue((prev) => prev.slice(1))
-          break
-        case 'Storage':
-          setStorageQueue((prev) => [...prev, { data, txid, step }])
-          setTransmissionQueue((prev) => prev.slice(1))
-          break
-        case 'LNG Export':
-          setLngExportQueue((prev) => [...prev, { data, txid, step }])
-          setStorageQueue((prev) => prev.slice(1))
-          break
-      }
-    } catch (error) {
-      console.error('Error submitting data:', error);
-    } finally {
-      setIsSubmitting(false);
-      setSubmittingStep(null);
+    // Background: relinquish all natural gas basket outputs so they don't clog the wallet
+    if (wallet) {
+      wallet.listOutputs({ basket: 'natural gas', limit: 1000 }).then(result => {
+        result.outputs.forEach(out => {
+          const [txid, voutStr] = out.outpoint.split('.')
+          wallet.relinquishOutput({ basket: 'natural gas', output: `${txid}.${voutStr}` }).catch(() => {})
+        })
+      }).catch(() => {})
     }
+  };
+
+  const handleSubmitData = (step: string, data: DataEntry) => {
+    step = step.toLowerCase()
+    if (stepHasSubmission(step) || !wallet) return;
+
+    const entryId = Utils.toBase64(Random(8))
+    data.entryId = entryId
+    data.timestamp = new Date().toISOString()
+    data = simulatedData(data)
+
+    const spend = grabTokenFromPreviousStep(step)
+
+    // Optimistic update — UI responds instantly with pending state
+    const pending = { step, data, txid: '' };
+    setSubmissions(prev => [...prev, pending]);
+    switch (step) {
+      case 'wellhead':
+        setWellheadQueue(prev => [...prev, { data, txid: '', step }])
+        break
+      case 'gathering':
+        setGatheringQueue(prev => [...prev, { data, txid: '', step }])
+        setWellheadQueue(prev => prev.slice(1))
+        break
+      case 'processing':
+        setProcessingQueue(prev => [...prev, { data, txid: '', step }])
+        setGatheringQueue(prev => prev.slice(1))
+        break
+      case 'transmission':
+        setTransmissionQueue(prev => [...prev, { data, txid: '', step }])
+        setProcessingQueue(prev => prev.slice(1))
+        break
+      case 'storage':
+        setStorageQueue(prev => [...prev, { data, txid: '', step }])
+        setTransmissionQueue(prev => prev.slice(1))
+        break
+      case 'lng export':
+        setLngExportQueue(prev => [...prev, { data, txid: '', step }])
+        setStorageQueue(prev => prev.slice(1))
+        break
+    }
+
+    // Background wallet call — resolves when BSV tx is confirmed
+    Promise.resolve(spend).then(spendEntry =>
+      createTokenOnBSV(wallet, data, step, sessionId, spendEntry)
+    ).then(({ txid }) => {
+      setSubmissions(prev => prev.map(s =>
+        s.step === step && s.txid === '' ? { ...s, txid } : s
+      ))
+      saveSubmission({ step, data, txid }).catch(console.error)
+    }).catch(error => {
+      console.error('Error creating token on BSV:', error)
+    })
   }
 
   /**
@@ -257,13 +268,9 @@ const App: React.FC = () => {
    * 
    * @param data The data to be stored
    * @param step The step of the process
-   * @returns The transaction ID and broadcast response
+   * @returns The transaction ID
    */
-  async function createTokenOnBSV(data: DataEntry, step: string, spend?: QueueEntry | null): Promise<{ txid: string, arc: unknown }> {
-    
-    // Initialize the wallet client with the remote signer to emulate IoT Device signing off on its data.
-    const baseUrl = window.location.origin
-    const wallet = new HTTPWalletJSON(baseUrl, `${baseUrl}/api`)
+  async function createTokenOnBSV(wallet: HTTPWalletJSON, data: DataEntry, step: string, sid: string, spend?: QueueEntry | null): Promise<{ txid: string }> {
 
     // Create a hash of the data
     const sha = Hash.sha256(JSON.stringify(data))
@@ -283,8 +290,7 @@ const App: React.FC = () => {
       customInstructions.keyID,
       'self',
       true,
-      true,
-      'after'
+      true
     )
 
     let inputs: CreateActionInput[] | undefined = undefined
@@ -365,13 +371,15 @@ const App: React.FC = () => {
       satoshis: 1,
       outputDescription: 'natural gas supply chain token',
       customInstructions: JSON.stringify(customInstructions),
-      basket: 'natural gas'
+      basket: 'natural gas',
+      tags: [step, `session-${sid}`]
     }]
 
 
     const res = await wallet.createAction({
       inputBEEF,
       description: 'record data within an NFT for natural gas supply chain tracking',
+      labels: [step],
       inputs,
       outputs,
       options: {
@@ -380,10 +388,7 @@ const App: React.FC = () => {
         randomizeOutputs: false
       }
     })
-    const tx = Transaction.fromAtomicBEEF(res.tx as number[])
-    const arc = await tx.broadcast(new ARC('https://arc.taal.com'))
-    console.log({ arc })
-    return { txid: res.txid as string, arc }
+    return { txid: res.txid as string }
   }
 
   const simulateData = {
@@ -503,43 +508,38 @@ const App: React.FC = () => {
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4, minHeight: '100vh', display: 'flex', flexDirection: 'column', pt: 10, pb: 40 }}>
-      <Backdrop
-        sx={{ color: '#fff', zIndex: (theme) => theme.zIndex.drawer + 1 }}
-        open={isSubmitting}
-      >
-        <Box sx={{ 
-          display: 'flex', 
-          flexDirection: 'column', 
-          alignItems: 'center',
-          bgcolor: 'rgba(0,0,0,0.7)',
-          p: 3,
-          borderRadius: 2
-        }}>
-          <CircularProgress color="primary" />
-          <Typography variant="h6" sx={{ mt: 2, color: 'white' }}>
-            {submittingStep ? `Processing ${submittingStep} data...` : 'Processing...'}
-          </Typography>
-        </Box>
-      </Backdrop>
-      <Typography variant="h4" align="center" color="white" gutterBottom sx={{ py: 5,fontWeight: 'bold', textShadow: '2px 1px 2px black' }}>
-        Natural Gas Blockchain Demo
-      </Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', py: 5 }}>
+        <Typography variant="h4" align="center" color="white" gutterBottom sx={{ fontWeight: 'bold', textShadow: '2px 1px 2px black', mb: 0 }}>
+          Natural Gas Blockchain Demo
+        </Typography>
+        {submissions.length > 0 && (
+          <Button
+            variant="outlined"
+            color="primary"
+            size="small"
+            onClick={handleClearAll}
+            sx={{ background: 'rgba(255, 255, 255, 1)', position: 'absolute', right: 0 }}
+          >
+            Clear All
+          </Button>
+        )}
+      </Box>
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
         <Box sx={boxSx}>
-          <Box sx={cardSx}><WellheadCard data={simulateData.wellhead} onSubmit={handleSubmitData} disabled={stepHasSubmission('Wellhead')} /></Box>
-          {submissions.filter(s => s.step === 'Wellhead').map(s => (
+          <Box sx={cardSx}><WellheadCard data={simulateData.wellhead} onSubmit={handleSubmitData} disabled={stepHasSubmission('wellhead')} /></Box>
+          {submissions.filter(s => s.step === 'wellhead').map(s => (
             <ResultBox key={s.txid} entry={s} />
           ))}
         </Box>
         <Box sx={boxSx}>
-          <Box sx={cardSx}><GatheringCard data={simulateData.gathering} onSubmit={handleSubmitData} disabled={stepHasSubmission('Gathering')} /></Box>
-          {submissions.filter(s => s.step === 'Gathering').map(s => (
+          <Box sx={cardSx}><GatheringCard data={simulateData.gathering} onSubmit={handleSubmitData} disabled={stepHasSubmission('gathering')} /></Box>
+          {submissions.filter(s => s.step === 'gathering').map(s => (
             <ResultBox key={s.txid} entry={s} />
           ))}
         </Box>
         <Box sx={boxSx}>
-          <Box sx={cardSx}><ProcessingCard data={simulateData.processing} onSubmit={handleSubmitData} disabled={stepHasSubmission('Processing')} /></Box>
-          {submissions.filter(s => s.step === 'Processing').map(s => (
+          <Box sx={cardSx}><ProcessingCard data={simulateData.processing} onSubmit={handleSubmitData} disabled={stepHasSubmission('processing')} /></Box>
+          {submissions.filter(s => s.step === 'processing').map(s => (
             <ResultBox key={s.txid} entry={s} />
           ))}
         </Box>
@@ -556,20 +556,20 @@ const App: React.FC = () => {
                     nitrogenPct: 1
                   }
                 }
-          }} onSubmit={handleSubmitData} disabled={stepHasSubmission('Transmission')} /></Box>
-          {submissions.filter(s => s.step === 'Transmission').map(s => (
+          }} onSubmit={handleSubmitData} disabled={stepHasSubmission('transmission')} /></Box>
+          {submissions.filter(s => s.step === 'transmission').map(s => (
             <ResultBox key={s.txid} entry={s} />
           ))}
         </Box>
         <Box sx={boxSx}>
-          <Box sx={cardSx}><StorageCard data={simulateData.storage} onSubmit={handleSubmitData} disabled={stepHasSubmission('Storage')} /></Box>
-          {submissions.filter(s => s.step === 'Storage').map(s => (
+          <Box sx={cardSx}><StorageCard data={simulateData.storage} onSubmit={handleSubmitData} disabled={stepHasSubmission('storage')} /></Box>
+          {submissions.filter(s => s.step === 'storage').map(s => (
             <ResultBox key={s.txid} entry={s} />
           ))}
         </Box>
         <Box sx={boxSx}>
-          <Box sx={cardSx}><LNGExportCard data={simulateData.lngExport} onSubmit={handleSubmitData} disabled={stepHasSubmission('LNG Export')} /></Box>
-          {submissions.filter(s => s.step === 'LNG Export').map(s => (
+          <Box sx={cardSx}><LNGExportCard data={simulateData.lngExport} onSubmit={handleSubmitData} disabled={stepHasSubmission('lng export')} /></Box>
+          {submissions.filter(s => s.step === 'lng export').map(s => (
             <ResultBox key={s.txid} entry={s} />
           ))}
         </Box>
