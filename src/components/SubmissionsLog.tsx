@@ -1,5 +1,5 @@
 "use client"
-import { Drawer, Paper, Typography, Stack, Box } from '@mui/material';
+import { Drawer, Paper, Typography, Stack, Box, Chip } from '@mui/material';
 import { Submission } from '../app/page';
 
 const SubmissionsLog: React.FC<{ submissions: Submission[] }> = ({ submissions }) => {
@@ -15,29 +15,56 @@ const SubmissionsLog: React.FC<{ submissions: Submission[] }> = ({ submissions }
       sx={{
         '& .MuiDrawer-paper': {
           height: 'auto',
-          maxHeight: '30vh',
+          maxHeight: '28vh',
           overflowY: 'auto',
+          borderTop: '2px solid',
+          borderColor: 'secondary.main',
+          background: 'rgba(255,255,255,0.97)',
+          backdropFilter: 'blur(8px)',
         }
       }}
     >
-      <Paper sx={{ p: 2, m: 1, maxHeight: '20vh', overflowY: 'auto' }}>
-        <Typography variant="h6">Submission Log</Typography>
+      <Paper elevation={0} sx={{ p: 2, m: 0, maxHeight: '24vh', overflowY: 'auto' }}>
+        <Typography variant="overline" sx={{ color: 'text.secondary', display: 'block', mb: 1 }}>
+          Transaction Log
+        </Typography>
         {submissions.toSorted((a, b) => new Date(b.data.timestamp).getTime() - new Date(a.data.timestamp).getTime()).map((entry) => (
           <Stack
-                sx={{ height: 40, borderBottom: '1px solid #ccc', p: 1 }}
-                direction="row"
-                key={entry.txid}
-                spacing={3}
-                justifyContent="space-between"
-                className='log-entry'
-              >
-                <Box sx={{ textAlign: 'left' }}><Typography variant="body1">{entry.step}:</Typography></Box>
-                <Box sx={{ textAlign: 'right' }}><Typography variant="body1">txid: {entry.txid}</Typography></Box>
-                <Box sx={{ textAlign: 'right' }}><Typography variant="body1">{new Date(entry.data.timestamp).toLocaleString()}</Typography></Box>
-              </Stack>
-            ))}
-        </Paper>
-      </Drawer>
+            sx={{
+              minHeight: 36,
+              borderBottom: '1px solid',
+              borderColor: 'divider',
+              py: 0.75,
+              px: 1,
+            }}
+            direction="row"
+            key={entry.txid || entry.step}
+            spacing={2}
+            alignItems="center"
+            className='log-entry'
+          >
+            <Chip
+              label={entry.step}
+              size="small"
+              sx={{
+                minWidth: 90,
+                fontWeight: 600,
+                fontSize: '0.7rem',
+                bgcolor: 'primary.main',
+                color: 'white',
+                textTransform: 'capitalize',
+              }}
+            />
+            <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.7rem', color: 'text.secondary', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {entry.txid || 'pending...'}
+            </Typography>
+            <Typography variant="body2" sx={{ fontSize: '0.7rem', color: 'text.secondary', whiteSpace: 'nowrap' }}>
+              {new Date(entry.data.timestamp).toLocaleString()}
+            </Typography>
+          </Stack>
+        ))}
+      </Paper>
+    </Drawer>
   )
 }
 

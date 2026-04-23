@@ -49,6 +49,7 @@ export interface Submission {
   data: DataEntry;
   txid: string;
   step: string;
+  error?: string;
 }
 
 const SESSION_KEY = 'natural-chain-session-id'
@@ -73,14 +74,14 @@ const App: React.FC = () => {
   const [lngExportQueue, setLngExportQueue] = useState<QueueEntry[]>([]);
 
   const checkUnspentSetQueues = async (w: HTTPWalletJSON, sid: string) => {
-    const data = await w.listOutputs({
+    const result = await w.listOutputs({
       includeTags: true,
-      include: 'locking scripts',
+      includeCustomInstructions: true,
       basket: 'natural gas',
       tags: [`session-${sid}`],
     })
 
-    console.log({ data })
+    console.log({ result })
 
     const newWellHead: QueueEntry[] = []
     const newGathering: QueueEntry[] = []
@@ -89,33 +90,30 @@ const App: React.FC = () => {
     const newStorage: QueueEntry[] = []
     const newLngExport: QueueEntry[] = []
 
-    if (data.outputs.length > 0) {
-      data.outputs.forEach(out => {
-        const { fields } = PushDrop.decode(LockingScript.fromHex(out.lockingScript as string))
-        console.log({ fields })
-        const d = JSON.parse(Utils.toUTF8(fields[0]))
-        const queueEntry: Partial<QueueEntry> = { data: d, txid: out.outpoint.split('.')[0] }
+    result.outputs.forEach(out => {
+      try {
+        const ci = JSON.parse(out.customInstructions as string)
+        const d: DataEntry = ci.data ?? { entryId: '', timestamp: '' }
+        const txid = out.outpoint.split('.')[0]
+        const queueEntry: Partial<QueueEntry> = { data: d, txid }
         if (out.tags?.includes('wellhead')) {
-          queueEntry.step = 'wellhead'
-          newWellHead.push(queueEntry as QueueEntry)
+          queueEntry.step = 'wellhead'; newWellHead.push(queueEntry as QueueEntry)
         } else if (out.tags?.includes('gathering')) {
-          queueEntry.step = 'gathering'
-          newGathering.push(queueEntry as QueueEntry)
+          queueEntry.step = 'gathering'; newGathering.push(queueEntry as QueueEntry)
         } else if (out.tags?.includes('processing')) {
-          queueEntry.step = 'processing'
-          newProcessing.push(queueEntry as QueueEntry)
+          queueEntry.step = 'processing'; newProcessing.push(queueEntry as QueueEntry)
         } else if (out.tags?.includes('transmission')) {
-          queueEntry.step = 'transmission'
-          newTransmission.push(queueEntry as QueueEntry)
+          queueEntry.step = 'transmission'; newTransmission.push(queueEntry as QueueEntry)
         } else if (out.tags?.includes('storage')) {
-          queueEntry.step = 'storage'
-          newStorage.push(queueEntry as QueueEntry)
+          queueEntry.step = 'storage'; newStorage.push(queueEntry as QueueEntry)
         } else if (out.tags?.includes('lng export')) {
-          queueEntry.step = 'lng export'
-          newLngExport.push(queueEntry as QueueEntry)
+          queueEntry.step = 'lng export'; newLngExport.push(queueEntry as QueueEntry)
         }
-      })
-    }
+      } catch (e) {
+        console.warn('Skipping malformed output', out.outpoint, e)
+      }
+    })
+
     return { newWellHead, newGathering, newProcessing, newTransmission, newStorage, newLngExport }
   }
 
@@ -156,7 +154,17 @@ const App: React.FC = () => {
     }
   }
 
-  const stepHasSubmission = (step: string) => submissions.some(s => s.step === step);
+  const STEP_ORDER = ['wellhead', 'gathering', 'processing', 'transmission', 'storage', 'lng export']
+
+  const stepHasSubmission = (step: string) => submissions.some(s => s.step === step && !s.error);
+
+  // A step is unlocked only when the previous step has a confirmed on-chain txid
+  const stepIsUnlocked = (step: string): boolean => {
+    const idx = STEP_ORDER.indexOf(step)
+    if (idx <= 0) return true // wellhead always open
+    const prevStep = STEP_ORDER[idx - 1]
+    return submissions.some(s => s.step === prevStep && !s.error && s.txid !== '')
+  }
 
   const handleClearAll = () => {
     const newId = Utils.toBase64(Random(8))
@@ -184,7 +192,7 @@ const App: React.FC = () => {
 
   const handleSubmitData = (step: string, data: DataEntry) => {
     step = step.toLowerCase()
-    if (stepHasSubmission(step) || !wallet) return;
+    if (stepHasSubmission(step) || !stepIsUnlocked(step) || !wallet) return;
 
     const entryId = Utils.toBase64(Random(8))
     data.entryId = entryId
@@ -227,11 +235,15 @@ const App: React.FC = () => {
       createTokenOnBSV(wallet, data, step, sessionId, spendEntry)
     ).then(({ txid }) => {
       setSubmissions(prev => prev.map(s =>
-        s.step === step && s.txid === '' ? { ...s, txid } : s
+        s.step === step && s.txid === '' && !s.error ? { ...s, txid } : s
       ))
       saveSubmission({ step, data, txid }).catch(console.error)
-    }).catch(error => {
-      console.error('Error creating token on BSV:', error)
+    }).catch(err => {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error('Error creating token on BSV:', message)
+      setSubmissions(prev => prev.map(s =>
+        s.step === step && s.txid === '' && !s.error ? { ...s, error: message } : s
+      ))
     })
   }
 
@@ -370,7 +382,7 @@ const App: React.FC = () => {
       lockingScript: lockingScript.toHex(),
       satoshis: 1,
       outputDescription: 'natural gas supply chain token',
-      customInstructions: JSON.stringify(customInstructions),
+      customInstructions: JSON.stringify({ ...customInstructions, data }),
       basket: 'natural gas',
       tags: [step, `session-${sid}`]
     }]
@@ -493,89 +505,119 @@ const App: React.FC = () => {
     }
   };
 
-  const boxSx = {
-    display: 'flex',
-    gap: 2,
-    alignItems: 'center',
-    flexDirection: { xs: 'column', md: 'row' }
-  };
-
-  const cardSx = {
-    width: { xs: '100%', sm: '100%', md: '50%', lg: '40%' },
-    minWidth: { md: '350px' },
-    flexShrink: 0
-  }
+  const STEPS = [
+    { key: 'wellhead', Card: WellheadCard, data: simulateData.wellhead },
+    { key: 'gathering', Card: GatheringCard, data: simulateData.gathering },
+    { key: 'processing', Card: ProcessingCard, data: simulateData.processing },
+    { key: 'transmission', Card: TransmissionCard, data: {
+      ...simulateData.transmission,
+      measurements: { ...simulateData.transmission.measurements, composition: { methanePct: 90, ethanePct: 5, propanePct: 3, co2Pct: 1, nitrogenPct: 1 } }
+    }},
+    { key: 'storage', Card: StorageCard, data: simulateData.storage },
+    { key: 'lng export', Card: LNGExportCard, data: simulateData.lngExport },
+  ] as const
 
   return (
-    <Container maxWidth="lg" sx={{ mt: 4, minHeight: '100vh', display: 'flex', flexDirection: 'column', pt: 10, pb: 40 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', py: 5 }}>
-        <Typography variant="h4" align="center" color="white" gutterBottom sx={{ fontWeight: 'bold', textShadow: '2px 1px 2px black', mb: 0 }}>
-          Natural Gas Blockchain Demo
-        </Typography>
-        {submissions.length > 0 && (
-          <Button
-            variant="outlined"
-            color="primary"
-            size="small"
-            onClick={handleClearAll}
-            sx={{ background: 'rgba(255, 255, 255, 1)', position: 'absolute', right: 0 }}
-          >
-            Clear All
-          </Button>
-        )}
+    <>
+      {/* Hero header */}
+      <Box sx={{
+        background: 'transparent',
+        pt: { xs: 6, md: 10 },
+        pb: { xs: 4, md: 6 },
+        textAlign: 'center',
+      }}>
+        <Container maxWidth="md">
+          <Typography variant="overline" sx={{ color: 'secondary.main', mb: 1, display: 'block' }}>
+            BSV Blockchain Powered
+          </Typography>
+          <Typography variant="h3" sx={{ color: 'white', fontWeight: 700, mb: 1.5 }}>
+            Natural Gas Supply Chain
+          </Typography>
+          <Typography variant="subtitle1" sx={{ color: 'rgba(255,255,255,0.65)', maxWidth: 560, mx: 'auto', mb: 3 }}>
+            Immutable chain-of-custody tracking from wellhead to LNG export.
+            Each stage creates a cryptographic token on the BSV blockchain.
+          </Typography>
+          {submissions.length > 0 && (
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={handleClearAll}
+              sx={{
+                color: 'rgba(255,255,255,0.8)',
+                borderColor: 'rgba(255,255,255,0.25)',
+                '&:hover': { borderColor: 'rgba(255,255,255,0.5)', bgcolor: 'rgba(255,255,255,0.05)' },
+              }}
+            >
+              Reset Demo
+            </Button>
+          )}
+        </Container>
       </Box>
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-        <Box sx={boxSx}>
-          <Box sx={cardSx}><WellheadCard data={simulateData.wellhead} onSubmit={handleSubmitData} disabled={stepHasSubmission('wellhead')} /></Box>
-          {submissions.filter(s => s.step === 'wellhead').map(s => (
-            <ResultBox key={s.txid} entry={s} />
+
+      {/* Pipeline stages */}
+      <Container maxWidth="lg" sx={{ pb: 40 }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {STEPS.map(({ key, Card, data }, i) => (
+            <Box key={key}>
+              {i > 0 && (
+                <Box sx={{
+                  display: 'flex', justifyContent: 'center', my: 1,
+                }}>
+                  <Box sx={{
+                    width: 2, height: 28,
+                    background: stepHasSubmission(STEPS[i-1].key)
+                      ? 'linear-gradient(to bottom, #D4A843, #D4A84380)'
+                      : 'linear-gradient(to bottom, #ccc, #ccc80)',
+                  }} />
+                </Box>
+              )}
+              <Box sx={{
+                display: 'flex',
+                gap: 2.5,
+                alignItems: { xs: 'stretch', md: 'center' },
+                flexDirection: { xs: 'column', md: 'row' },
+              }}>
+                <Box sx={{
+                  width: { xs: '100%', md: '42%' },
+                  minWidth: { md: 340 },
+                  flexShrink: 0,
+                  position: 'relative',
+                }}>
+                  <Box sx={{
+                    position: 'absolute',
+                    top: -10,
+                    left: 12,
+                    zIndex: 1,
+                    bgcolor: stepHasSubmission(key)
+                      ? 'secondary.main'
+                      : stepIsUnlocked(key)
+                      ? 'primary.light'
+                      : 'grey.400',
+                    color: 'white',
+                    fontSize: '0.65rem',
+                    fontWeight: 700,
+                    px: 1,
+                    py: 0.25,
+                    borderRadius: 1,
+                    letterSpacing: '0.08em',
+                    textTransform: 'uppercase',
+                  }}>
+                    {stepHasSubmission(key) ? `✓ Stage ${i + 1}` : stepIsUnlocked(key) ? `Stage ${i + 1}` : `🔒 Stage ${i + 1}`}
+                  </Box>
+                  <Card data={data} onSubmit={handleSubmitData} disabled={stepHasSubmission(key) || !stepIsUnlocked(key)} />
+                </Box>
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  {submissions.filter(s => s.step === key).map(s => (
+                    <ResultBox key={s.txid || s.step} entry={s} />
+                  ))}
+                </Box>
+              </Box>
+            </Box>
           ))}
         </Box>
-        <Box sx={boxSx}>
-          <Box sx={cardSx}><GatheringCard data={simulateData.gathering} onSubmit={handleSubmitData} disabled={stepHasSubmission('gathering')} /></Box>
-          {submissions.filter(s => s.step === 'gathering').map(s => (
-            <ResultBox key={s.txid} entry={s} />
-          ))}
-        </Box>
-        <Box sx={boxSx}>
-          <Box sx={cardSx}><ProcessingCard data={simulateData.processing} onSubmit={handleSubmitData} disabled={stepHasSubmission('processing')} /></Box>
-          {submissions.filter(s => s.step === 'processing').map(s => (
-            <ResultBox key={s.txid} entry={s} />
-          ))}
-        </Box>
-        <Box sx={boxSx}>
-          <Box sx={cardSx}><TransmissionCard data={{
-                ...simulateData.transmission,
-                measurements: {
-                  ...simulateData.transmission.measurements,
-                  composition: {
-                    methanePct: 90,
-                    ethanePct: 5,
-                    propanePct: 3,
-                    co2Pct: 1,
-                    nitrogenPct: 1
-                  }
-                }
-          }} onSubmit={handleSubmitData} disabled={stepHasSubmission('transmission')} /></Box>
-          {submissions.filter(s => s.step === 'transmission').map(s => (
-            <ResultBox key={s.txid} entry={s} />
-          ))}
-        </Box>
-        <Box sx={boxSx}>
-          <Box sx={cardSx}><StorageCard data={simulateData.storage} onSubmit={handleSubmitData} disabled={stepHasSubmission('storage')} /></Box>
-          {submissions.filter(s => s.step === 'storage').map(s => (
-            <ResultBox key={s.txid} entry={s} />
-          ))}
-        </Box>
-        <Box sx={boxSx}>
-          <Box sx={cardSx}><LNGExportCard data={simulateData.lngExport} onSubmit={handleSubmitData} disabled={stepHasSubmission('lng export')} /></Box>
-          {submissions.filter(s => s.step === 'lng export').map(s => (
-            <ResultBox key={s.txid} entry={s} />
-          ))}
-        </Box>
-      </Box>
+      </Container>
       <SubmissionsLog submissions={submissions} />
-    </Container>
+    </>
   );
 };
 

@@ -1,33 +1,47 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
 body {
   min-height: 100vh;
-  background: linear-gradient(to bottom, #1976d2, #ffffff, #f4ecd8);
+  background: #0D2137;
+  background-image:
+    radial-gradient(ellipse at 15% 10%, rgba(26, 78, 122, 0.45) 0%, transparent 50%),
+    radial-gradient(ellipse at 85% 60%, rgba(212, 168, 67, 0.06) 0%, transparent 45%);
   margin: 0;
   padding: 0;
-  font-family: 'Helvetica', sans-serif;
+  font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .log-entry {
-  border-left: 3px solid #1976d2;
-  padding: 10px;
+  border-left: 3px solid #D4A843;
+  padding: 8px 12px;
   margin: 0;
-  animation: flashFade 5s ease-out;
+  animation: flashFade 3s ease-out;
+  font-size: 0.8125rem;
 }
 
 .log-entry:nth-child(odd) {
-  background-color: #f0f0f0;
+  background-color: #FAFBFC;
 }
 
 .log-entry:nth-child(even) {
-  background-color: #ffffff;
+  background-color: #FFFFFF;
 }
 
 @keyframes flashFade {
   0% {
-    background-color: rgba(25, 118, 210, 0.3);
+    background-color: rgba(212, 168, 67, 0.15);
   }
-
   100% {
     background-color: transparent;
   }
+}
 
+/* Step connector lines between stages */
+.stage-connector {
+  width: 2px;
+  height: 24px;
+  background: linear-gradient(to bottom, #D4A843, transparent);
+  margin: 0 auto;
 }

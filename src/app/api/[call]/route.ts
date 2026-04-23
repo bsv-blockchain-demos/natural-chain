@@ -62,7 +62,8 @@ export async function POST(req: Request) {
     // transmit the result as json
     return Response.json(result, { status: 200 })
   } catch (error) {
-    console.error({ error })
-    return Response.json({ error: 'Internal Server Error' }, { status: 500 })
+    const message = error instanceof Error ? error.message : String(error)
+    console.error({ error, message })
+    return Response.json({ error: message }, { status: 500 })
   }
 }
