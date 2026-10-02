@@ -3,7 +3,7 @@
   "version": "2.0.0",
   "description": "Natural Chain - BSV Natural Gas Supply Chain",
   "author": "Natural Chain",
-  "license": "OpenBSV",
+  "license": "SEE LICENSE IN LICENSE.txt",
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",

@@ -60,4 +60,4 @@ The application uses Next.js 16, React 19 and the BSV SDK and wallet toolbox. Th
 
 ## Licence
 
-The package manifest declares OpenBSV. A separate licence file is not included.
+**Open BSV Licence v6.** See [LICENSE.txt](LICENSE.txt) for the full terms. The licence applies to this project's original code and documentation and restricts use to the BSV blockchain defined in the licence. Third-party code, assets and referenced standards retain their respective terms.
